@@ -1,17 +1,17 @@
 import flwr as fl
 
 def weighted_average(metrics):
-    # Estrazione delle metriche (loss o accuracy)
-    values = [m[2].get("loss") if "loss" in m[2] else m[2].get("accuracy") for m in metrics if len(m) == 3 and isinstance(m[2], dict)]
-    weights = [m[1] for m in metrics if len(m) >= 2] # Almeno 2 elementi devono essere presenti
+    # Estrazione delle metriche di loss 
+    losses = [m[2]["loss"] for m in metrics if len(m) == 3 and isinstance(m[2], dict) and "loss" in m[2]]
+    examples = [m[1] for m in metrics if len(m) >= 2] # Almeno 2 elementi devono essere presenti
 
-    # Calcolo della media ponderata (se presenti le metriche)
-    if values:
-        weighted_sum = sum([v * w for v, w in zip(values, weights)])
-        total_weight = sum(weights)
-        return weighted_sum / total_weight
+    # Calcolo della media ponderata della loss (se presenti le metriche)
+    if losses:
+        weighted_loss_sum = sum([loss * num for loss, num in zip(losses, examples)])
+        total_examples = sum(examples)
+        return weighted_loss_sum / total_examples
     else:
-        return {}
+        return {}  # Restituisci un dizionario vuoto se non ci sono metriche
 
 # Definire la strategia federata
 strategy = fl.server.strategy.FedAvg(
