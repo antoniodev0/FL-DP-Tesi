@@ -86,7 +86,7 @@ class FlowerClientWithDP(fl.client.NumPyClient):
     def fit(self, parameters, config):
         self.set_parameters(parameters)
         self.model.train()
-        for _ in range(1):  # una epoca
+        for _ in range(5):  # una epoca
             for images, labels in self.train_loader:
                 self.optimizer.zero_grad()
                 outputs = self.model(images)
