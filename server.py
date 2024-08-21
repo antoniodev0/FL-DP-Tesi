@@ -4,7 +4,7 @@ from flwr.common import Scalar, FitRes, Parameters, EvaluateRes
 from flwr.server.client_proxy import ClientProxy
 import numpy as np
 
-class FedAvgWithMetrics(fl.server.strategy.FedAvg):
+class FedAvgServer(fl.server.strategy.FedAvg):
     def aggregate_fit(
         self,
         rnd: int,
@@ -82,7 +82,7 @@ class FedAvgWithMetrics(fl.server.strategy.FedAvg):
         return weights_prime
 
 # Create strategy
-strategy = FedAvgWithMetrics(
+strategy = FedAvgServer(
     fraction_fit=1.0,
     fraction_evaluate=1.0,
     min_fit_clients=5,
