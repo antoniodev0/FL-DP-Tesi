@@ -10,6 +10,10 @@ import torch.optim as optim
 import flwr as fl
 from opacus import PrivacyEngine
 import warnings
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.metrics import confusion_matrix
+import numpy as np
 
 warnings.filterwarnings("ignore", category=UserWarning, message="Using a non-full backward hook when the forward contains multiple autograd Nodes is deprecated")
 
@@ -43,7 +47,7 @@ transform = transforms.Compose([
     transforms.Normalize((0.1307,), (0.3081,))
 ])
 
-def load_datasets(partition_id, num_partitions=30):
+def load_datasets(partition_id, num_partitions=5):
     mnist_train = datasets.MNIST('data', train=True, download=True, transform=transform)
     mnist_test = datasets.MNIST('data', train=False, download=True, transform=transform)
     
@@ -66,10 +70,11 @@ def load_datasets(partition_id, num_partitions=30):
     return trainloader, valloader, testloader
 
 class FlowerClientWithDP(fl.client.NumPyClient):
-    def __init__(self, model, trainloader, valloader, delta=1e-5):
+    def __init__(self, model, trainloader, valloader, partition_id, delta=1e-5):
         self.model = model
         self.train_loader = trainloader
         self.val_loader = valloader
+        self.partition_id = partition_id  # Aggiungiamo il partition ID
         self.criterion = nn.CrossEntropyLoss()
         self.optimizer = optim.Adam(model.parameters(), lr=0.001)
 
@@ -82,7 +87,7 @@ class FlowerClientWithDP(fl.client.NumPyClient):
             module=self.model,
             optimizer=self.optimizer,
             data_loader=self.train_loader,
-            noise_multiplier=1.1,  # Controllo del rumore
+            noise_multiplier=0.9,  # Controllo del rumore
             max_grad_norm=1.0,  # Clipping del gradiente
         )
 
@@ -100,7 +105,7 @@ class FlowerClientWithDP(fl.client.NumPyClient):
     def fit(self, parameters, config):
         self.set_parameters(parameters)
         self.model.train()
-        for _ in range(5):
+        for _ in range(3):
             for images, labels in self.train_loader:
                 self.optimizer.zero_grad()
                 outputs = self.model(images)
@@ -111,6 +116,7 @@ class FlowerClientWithDP(fl.client.NumPyClient):
         # Calcola l'epsilon dopo l'addestramento
         epsilon = self.privacy_engine.accountant.get_epsilon(delta=self.delta)
         print(f"Training complete. (ε = {epsilon:.2f}, δ = {self.delta})")
+        self.generate_confusion_matrix()
 
         loss_sum = 0
         with torch.no_grad():
@@ -137,11 +143,39 @@ class FlowerClientWithDP(fl.client.NumPyClient):
         accuracy = correct / total
         avg_loss = loss / len(self.val_loader.dataset)
         return avg_loss, len(self.val_loader.dataset), {"loss": avg_loss, "accuracy": accuracy}
+    
+    def generate_confusion_matrix(self):
+        """Genera e salva la matrice di confusione per questo client."""
+        all_preds = []
+        all_labels = []
+
+        # Ottieni le predizioni e le etichette vere
+        self.model.eval()
+        with torch.no_grad():
+            for images, labels in self.val_loader:
+                outputs = self.model(images)
+                _, predicted = outputs.max(1)
+                all_preds.extend(predicted.cpu().numpy())
+                all_labels.extend(labels.cpu().numpy())
+
+        # Calcola la confusion matrix
+        cm = confusion_matrix(all_labels, all_preds)
+
+        # Visualizza la confusion matrix senza normalizzazione
+        plt.figure(figsize=(10, 7))
+        sns.heatmap(cm, annot=True, fmt="d", cmap='Blues')  # Usa 'fmt="d"' per valori interi
+        plt.ylabel('True label')
+        plt.xlabel('Predicted label')
+        plt.title(f'Confusion Matrix Client {self.partition_id} (Absolute Counts)')
+
+        # Salva l'immagine con il nome del client
+        plt.savefig(f'confusion_matrix_client_{self.partition_id}.png')
+        plt.close()
 
 def main():
     trainloader, valloader, testloader = load_datasets(args.partition_id)
     model = OptimizedCNN()
-    client = FlowerClientWithDP(model, trainloader, valloader)
+    client = FlowerClientWithDP(model, trainloader, valloader,args.partition_id)
     fl.client.start_client(server_address="localhost:8080", client=client.to_client())
 
 if __name__ == "__main__":
