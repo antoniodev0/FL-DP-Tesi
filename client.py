@@ -47,7 +47,7 @@ transform = transforms.Compose([
     transforms.Normalize((0.1307,), (0.3081,))
 ])
 
-def load_datasets(partition_id, num_partitions=5):
+def load_datasets(partition_id, num_partitions=10):
     mnist_train = datasets.MNIST('data', train=True, download=True, transform=transform)
     mnist_test = datasets.MNIST('data', train=False, download=True, transform=transform)
     
@@ -76,7 +76,7 @@ class FlowerClientWithDP(fl.client.NumPyClient):
         self.val_loader = valloader
         self.partition_id = partition_id  # Aggiungiamo il partition ID
         self.criterion = nn.CrossEntropyLoss()
-        self.optimizer = optim.Adam(model.parameters(), lr=0.001)
+        self.optimizer = optim.Adam(model.parameters(), lr=0.0005)
 
         # Inizializzazione del PrivacyEngine con delta
         
@@ -87,8 +87,8 @@ class FlowerClientWithDP(fl.client.NumPyClient):
             module=self.model,
             optimizer=self.optimizer,
             data_loader=self.train_loader,
-            noise_multiplier=0.9,  # Controllo del rumore
-            max_grad_norm=1.0,  # Clipping del gradiente
+            noise_multiplier=1.0,  # Controllo del rumore
+            max_grad_norm=1.5,  # Clipping del gradiente
         )
 
         # Delta per la privacy differenziale
@@ -105,7 +105,7 @@ class FlowerClientWithDP(fl.client.NumPyClient):
     def fit(self, parameters, config):
         self.set_parameters(parameters)
         self.model.train()
-        for _ in range(3):
+        for _ in range(5):
             for images, labels in self.train_loader:
                 self.optimizer.zero_grad()
                 outputs = self.model(images)
