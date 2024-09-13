@@ -51,7 +51,7 @@ def load_datasets(partition_id, num_partitions=10):
     mnist_train = datasets.MNIST('data', train=True, download=True, transform=transform)
     mnist_test = datasets.MNIST('data', train=False, download=True, transform=transform)
     
-     # Partiziona il dataset in 30 parti
+     # Partiziona il dataset
     partition_size = len(mnist_train) // num_partitions
     partitions = random_split(mnist_train, [partition_size] * num_partitions)
     
@@ -76,7 +76,7 @@ class FlowerClientWithDP(fl.client.NumPyClient):
         self.val_loader = valloader
         self.partition_id = partition_id  # Aggiungiamo il partition ID
         self.criterion = nn.CrossEntropyLoss()
-        self.optimizer = optim.Adam(model.parameters(), lr=0.001)
+        self.optimizer = optim.Adam(model.parameters(), lr=0.0005)
 
         # Inizializzazione del PrivacyEngine con delta
         
@@ -87,8 +87,8 @@ class FlowerClientWithDP(fl.client.NumPyClient):
             module=self.model,
             optimizer=self.optimizer,
             data_loader=self.train_loader,
-            noise_multiplier=0.9,  # Controllo del rumore
-            max_grad_norm=1.0,  # Clipping del gradiente
+            noise_multiplier=0.8,  # Controllo del rumore
+            max_grad_norm=1.5,  # Clipping del gradiente
         )
 
         # Delta per la privacy differenziale
@@ -105,7 +105,7 @@ class FlowerClientWithDP(fl.client.NumPyClient):
     def fit(self, parameters, config):
         self.set_parameters(parameters)
         self.model.train()
-        for _ in range(3):
+        for _ in range(5):
             for images, labels in self.train_loader:
                 self.optimizer.zero_grad()
                 outputs = self.model(images)
@@ -116,7 +116,8 @@ class FlowerClientWithDP(fl.client.NumPyClient):
         # Calcola l'epsilon dopo l'addestramento
         epsilon = self.privacy_engine.accountant.get_epsilon(delta=self.delta)
         print(f"Training complete. (ε = {epsilon:.2f}, δ = {self.delta})")
-        
+        self.generate_confusion_matrix()
+
         loss_sum = 0
         with torch.no_grad():
             for images, labels in self.train_loader:
@@ -143,12 +144,38 @@ class FlowerClientWithDP(fl.client.NumPyClient):
         avg_loss = loss / len(self.val_loader.dataset)
         return avg_loss, len(self.val_loader.dataset), {"loss": avg_loss, "accuracy": accuracy}
     
+    def generate_confusion_matrix(self):
+        """Genera e salva la matrice di confusione per questo client."""
+        all_preds = []
+        all_labels = []
 
-# Modifica il main per includere il partition_id
+        # Ottieni le predizioni e le etichette vere
+        self.model.eval()
+        with torch.no_grad():
+            for images, labels in self.val_loader:
+                outputs = self.model(images)
+                _, predicted = outputs.max(1)
+                all_preds.extend(predicted.cpu().numpy())
+                all_labels.extend(labels.cpu().numpy())
+
+        # Calcola la confusion matrix
+        cm = confusion_matrix(all_labels, all_preds)
+
+        # Visualizza la confusion matrix senza normalizzazione
+        plt.figure(figsize=(10, 7))
+        sns.heatmap(cm, annot=True, fmt="d", cmap='Blues')  # Usa 'fmt="d"' per valori interi
+        plt.ylabel('True label')
+        plt.xlabel('Predicted label')
+        plt.title(f'Confusion Matrix Client {self.partition_id} (Absolute Counts)')
+
+        # Salva l'immagine con il nome del client
+        plt.savefig(f'confusion_matrix_client_{self.partition_id}.png')
+        plt.close()
+
 def main():
     trainloader, valloader, testloader = load_datasets(args.partition_id)
     model = OptimizedCNN()
-    client = FlowerClientWithDP(model, trainloader, valloader, args.partition_id)
+    client = FlowerClientWithDP(model, trainloader, valloader,args.partition_id)
     fl.client.start_client(server_address="localhost:8080", client=client.to_client())
 
 if __name__ == "__main__":
